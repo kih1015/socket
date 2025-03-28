@@ -1,48 +1,49 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-#define PORTNUM 9000
+#define SOCKET_NAME "hbsocket"
 
 int main() {
     char buf[256];
-    struct sockaddr_in sin, cli;
-    int sd, ns, clientlen = sizeof(cli);
-    
-    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    struct sockaddr_un ser, cli;
+    int sd, nsd, len, clen;
+
+    if ((sd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
         perror("socket");
         exit(1);
     }
-    
-    memset((char *)&sin, '\0', sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(PORTNUM);
-    sin.sin_addr.s_addr = inet_addr("192.168.147.129");
-    
-    if (bind(sd, (struct sockaddr *)&sin, sizeof(sin))) {
+
+    memset((char *)&ser, 0, sizeof(struct sockaddr_un));
+    ser.sun_family = AF_UNIX;
+    strcpy(ser.sun_path, SOCKET_NAME);
+    len = sizeof(ser.sun_family) + strlen(ser.sun_path);
+
+    if (bind(sd, (struct sockaddr *)&ser, len)) {
         perror("bind");
         exit(1);
     }
-    
-    if (listen(sd, 5)) {
+
+    if (listen(sd, 5) < 0) {
         perror("listen");
         exit(1);
     }
-    
-    if ((ns = accept(sd, (struct sockaddr *)&cli, &clientlen)) == -1) {
+
+    printf("Waiting ...\n");
+    if ((nsd = accept(sd, (struct sockaddr *)&cli, &clen)) == -1) {
         perror("accept");
         exit(1);
     }
-    
-    sprintf(buf, "Your IP address is %s", inet_ntoa(cli.sin_addr));
-    if (send(ns, buf, strlen(buf) + 1, 0) == -1) {
-        perror("send");
+
+    if (recv(nsd, buf, sizeof(buf), 0) == -1) {
+        perror("recv");
         exit(1);
     }
-    close(ns);
+
+    printf("Received Message: %s\n", buf);
+    close(nsd);
     close(sd);
 } 

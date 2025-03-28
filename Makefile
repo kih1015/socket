@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra
 CLIENT = unix_client
-SERVER = inet_server
+SERVER = unix_server
 CLIENT_SRC = client.c
 SERVER_SRC = server.c
 
@@ -15,3 +15,4 @@ $(SERVER): $(SERVER_SRC)
 
 clean:
 	rm -f $(CLIENT) $(SERVER) 
+	
