@@ -41,7 +41,7 @@ int main() {
         exit(1);
     }
     
-    printf("서버에 연결되었습니다 (IP: %s, 포트: %d)\n", SERVER_IP, SERVER_PORT);
+    printf("서버에 연결되었습니다\n", SERVER_IP, SERVER_PORT);
     
     // 학번 입력 받기
     printf("학번을 입력하세요: ");
@@ -66,7 +66,7 @@ int main() {
     }
     
     recv_buffer[recv_len] = '\0';
-    printf("서버 응답 (랜덤 숫자): %s\n", recv_buffer);
+    printf("서버 응답: %s\n", recv_buffer);
     
     // 받은 숫자를 long long 타입으로 변환
     received_number = atoll(recv_buffer);
@@ -77,7 +77,7 @@ int main() {
     // 결과를 문자열로 변환하여 다시 보내기
     sprintf(send_buffer, "%lld", result);
     
-    printf("계산된 결과 (랜덤 숫자 + 학번): %s\n", send_buffer);
+    printf("서버 응답 + 학번: %s\n", send_buffer);
     
     // 계산 결과 전송
     if (send(sock, send_buffer, strlen(send_buffer), 0) < 0) {
