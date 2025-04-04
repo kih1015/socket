@@ -17,7 +17,7 @@ int main() {
     char response[BUFFER_SIZE];
     char final_response[BUFFER_SIZE];
     int recv_len;
-    long long random_number, client_number, result;
+    long long random_number, client_number, expected_result, received_result;
     
     // 소켓 생성
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -72,6 +72,9 @@ int main() {
     buffer[recv_len] = '\0';
     printf("클라이언트로부터 받은 학번: %s\n", buffer);
     
+    // 학번을 숫자로 변환
+    client_number = atoll(buffer);
+    
     // 랜덤 숫자 생성 (18자리)
     srand(time(NULL));
     random_number = rand() % 1000000000000000000LL;
@@ -99,11 +102,21 @@ int main() {
     buffer[recv_len] = '\0';
     printf("클라이언트로부터 받은 계산 결과: %s\n", buffer);
     
-    // 클라이언트 학번을 숫자로 변환
-    client_number = atoll(buffer) - random_number;
+    // 클라이언트가 보낸 계산 결과를 숫자로 변환
+    received_result = atoll(buffer);
     
-    // 최종 응답 생성
-    sprintf(final_response, "학번 %lld 확인 완료", client_number);
+    // 서버에서 예상하는 계산 결과 (학번 + 랜덤 숫자)
+    expected_result = client_number + random_number;
+    
+    // 계산 결과가 일치하는지 확인
+    if (received_result == expected_result) {
+        strcpy(final_response, "success");
+        printf("계산 결과가 일치합니다. 응답: %s\n", final_response);
+    } else {
+        strcpy(final_response, "fail");
+        printf("계산 결과가 일치하지 않습니다. 응답: %s\n", final_response);
+        printf("예상 결과: %lld, 받은 결과: %lld\n", expected_result, received_result);
+    }
     
     // 최종 응답을 클라이언트에게 전송
     if (send(client_fd, final_response, strlen(final_response), 0) < 0) {
