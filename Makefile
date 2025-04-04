@@ -10,11 +10,14 @@ STUDENT_ID_CLIENT = student_id_client
 STUDENT_ID_SERVER = student_id_server
 MULTI_PROCESS_CLIENT = multi_process_client
 MULTI_PROCESS_SERVER = multi_process_server
+UDP_CLIENT = udp_client
+UDP_SERVER = udp_server
 
 # 모든 타겟 정의
 TARGETS = $(CLIENT) $(SERVER) $(INET_CLIENT) $(INET_SERVER) \
           $(STUDENT_ID_CLIENT) $(STUDENT_ID_SERVER) \
-          $(MULTI_PROCESS_CLIENT) $(MULTI_PROCESS_SERVER)
+          $(MULTI_PROCESS_CLIENT) $(MULTI_PROCESS_SERVER) \
+          $(UDP_CLIENT) $(UDP_SERVER)
 
 # 기본 타겟: 모든 실행 파일 빌드
 all: $(TARGETS)
@@ -42,6 +45,12 @@ $(MULTI_PROCESS_CLIENT): multi_process_client.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(MULTI_PROCESS_SERVER): multi_process_server.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(UDP_CLIENT): udp_client.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(UDP_SERVER): udp_server.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 # 정리 규칙
