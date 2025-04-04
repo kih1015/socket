@@ -1,38 +1,13 @@
 CC = gcc
-CFLAGS = -Wall -Wextra
-CLIENT = unix_client
-SERVER = unix_server
-INET_SERVER = inet_server
-INET_CLIENT = inet_client
-STUDENT_ID_CLIENT = student_id_client
-STUDENT_ID_SERVER = student_id_server
-CLIENT_SRC = client.c
-SERVER_SRC = server.c
-INET_SERVER_SRC = inet_server.c
-INET_CLIENT_SRC = inet_client.c
-STUDENT_ID_CLIENT_SRC = student_id_client.c
-STUDENT_ID_SERVER_SRC = student_id_server.c
+CFLAGS = -Wall -Wextra -g
+TARGETS = multi_process_server
 
-all: $(CLIENT) $(SERVER) $(INET_SERVER) $(INET_CLIENT) $(STUDENT_ID_CLIENT) $(STUDENT_ID_SERVER)
+all: $(TARGETS)
 
-$(CLIENT): $(CLIENT_SRC)
-	$(CC) $(CFLAGS) -o $(CLIENT) $(CLIENT_SRC)
-
-$(SERVER): $(SERVER_SRC)
-	$(CC) $(CFLAGS) -o $(SERVER) $(SERVER_SRC)
-
-$(INET_SERVER): $(INET_SERVER_SRC)
-	$(CC) $(CFLAGS) -o $(INET_SERVER) $(INET_SERVER_SRC)
-
-$(INET_CLIENT): $(INET_CLIENT_SRC)
-	$(CC) $(CFLAGS) -o $(INET_CLIENT) $(INET_CLIENT_SRC)
-
-$(STUDENT_ID_CLIENT): $(STUDENT_ID_CLIENT_SRC)
-	$(CC) $(CFLAGS) -o $(STUDENT_ID_CLIENT) $(STUDENT_ID_CLIENT_SRC)
-
-$(STUDENT_ID_SERVER): $(STUDENT_ID_SERVER_SRC)
-	$(CC) $(CFLAGS) -o $(STUDENT_ID_SERVER) $(STUDENT_ID_SERVER_SRC)
+multi_process_server: multi_process_server.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f $(CLIENT) $(SERVER) $(INET_SERVER) $(INET_CLIENT) $(STUDENT_ID_CLIENT) $(STUDENT_ID_SERVER) 
-	
+	rm -f $(TARGETS)
+
+.PHONY: all clean 
