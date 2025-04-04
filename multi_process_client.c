@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define PORTNUM 9000
+#define PORTNUM 31337
 #define BUFFER_SIZE 256
 
 int main() {
