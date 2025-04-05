@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra
 
 # 모든 소스 파일과 실행 파일 정의
 CLIENT = client
@@ -20,7 +20,7 @@ TARGETS = $(CLIENT) $(SERVER) $(INET_CLIENT) $(INET_SERVER) \
           $(UDP_CLIENT) $(UDP_SERVER)
 
 # 기본 타겟: 모든 실행 파일 빌드
-all: $(TARGETS)
+all: udp_peer
 
 # 각 소스 파일에 대한 빌드 규칙
 $(CLIENT): client.c
@@ -55,7 +55,7 @@ $(UDP_SERVER): udp_server.c
 
 # 정리 규칙
 clean:
-	rm -f $(TARGETS)
+	rm -f $(TARGETS) udp_peer
 
 # 가짜 타겟 선언
 .PHONY: all clean 
