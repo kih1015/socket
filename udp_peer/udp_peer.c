@@ -19,7 +19,7 @@ void receive_data(int sock_fd) {
                                (struct sockaddr *)&client_addr, &client_len);
         
         if (recv_len > 0) {
-            printf("\n수신: %s\n", buffer);
+            printf("수신: %s\n", buffer);
         }
     }
 }
