@@ -2,60 +2,38 @@ CC = gcc
 CFLAGS = -Wall -Wextra
 
 # 모든 소스 파일과 실행 파일 정의
-CLIENT = client
-SERVER = server
-INET_CLIENT = inet_client
-INET_SERVER = inet_server
-STUDENT_ID_CLIENT = student_id_client
-STUDENT_ID_SERVER = student_id_server
-MULTI_PROCESS_CLIENT = multi_process_client
-MULTI_PROCESS_SERVER = multi_process_server
-UDP_CLIENT = udp_client
-UDP_SERVER = udp_server
-
-# 모든 타겟 정의
-TARGETS = $(CLIENT) $(SERVER) $(INET_CLIENT) $(INET_SERVER) \
-          $(STUDENT_ID_CLIENT) $(STUDENT_ID_SERVER) \
-          $(MULTI_PROCESS_CLIENT) $(MULTI_PROCESS_SERVER) \
-          $(UDP_CLIENT) $(UDP_SERVER)
+TARGETS = unix_client unix_server inet_client inet_server student_id_client student_id_server multi_process_client multi_process_server udp_peer udp_client udp_server
 
 # 기본 타겟: 모든 실행 파일 빌드
-all: udp_peer
+all: unix_socket inet_socket student_id multi_process udp_peer udp
 
 # 각 소스 파일에 대한 빌드 규칙
-$(CLIENT): client.c
-	$(CC) $(CFLAGS) -o $@ $<
+unix_socket:
+	$(MAKE) -C $@
 
-$(SERVER): server.c
-	$(CC) $(CFLAGS) -o $@ $<
+inet_socket:
+	$(MAKE) -C $@
 
-$(INET_CLIENT): inet_client.c
-	$(CC) $(CFLAGS) -o $@ $<
+student_id:
+	$(MAKE) -C $@
 
-$(INET_SERVER): inet_server.c
-	$(CC) $(CFLAGS) -o $@ $<
+multi_process:
+	$(MAKE) -C $@
 
-$(STUDENT_ID_CLIENT): student_id_client.c
-	$(CC) $(CFLAGS) -o $@ $<
+udp_peer:
+	$(MAKE) -C $@
 
-$(STUDENT_ID_SERVER): student_id_server.c
-	$(CC) $(CFLAGS) -o $@ $<
-
-$(MULTI_PROCESS_CLIENT): multi_process_client.c
-	$(CC) $(CFLAGS) -o $@ $<
-
-$(MULTI_PROCESS_SERVER): multi_process_server.c
-	$(CC) $(CFLAGS) -o $@ $<
-
-$(UDP_CLIENT): udp_client.c
-	$(CC) $(CFLAGS) -o $@ $<
-
-$(UDP_SERVER): udp_server.c
-	$(CC) $(CFLAGS) -o $@ $<
+udp:
+	$(MAKE) -C $@
 
 # 정리 규칙
 clean:
-	rm -f $(TARGETS) udp_peer
+	$(MAKE) -C unix_socket clean
+	$(MAKE) -C inet_socket clean
+	$(MAKE) -C student_id clean
+	$(MAKE) -C multi_process clean
+	$(MAKE) -C udp_peer clean
+	$(MAKE) -C udp clean
 
 # 가짜 타겟 선언
-.PHONY: all clean 
+.PHONY: all clean unix_socket inet_socket student_id multi_process udp_peer udp
