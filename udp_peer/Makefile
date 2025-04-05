@@ -1,11 +1,11 @@
 CC = gcc
 CFLAGS = -Wall -Wextra
-LDFLAGS = -lncurses
 
 all: udp_peer
 
 udp_peer: udp_peer.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	rm -f udp_peer 
+	

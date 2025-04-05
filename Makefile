@@ -1,3 +1,4 @@
+# 컴파일러 및 컴파일 옵션 정의
 CC = gcc
 CFLAGS = -Wall -Wextra
 
