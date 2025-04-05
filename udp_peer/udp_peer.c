@@ -20,7 +20,6 @@ void receive_data(int sock_fd) {
         
         if (recv_len > 0) {
             printf("\n수신: %s\n", buffer);
-            printf("메시지 입력: ");
         }
     }
 }
@@ -35,7 +34,6 @@ void send_data(int sock_fd, const char *remote_ip, int remote_port) {
     server_addr.sin_addr.s_addr = inet_addr(remote_ip);
 
     while (1) {
-        printf("메시지 입력: ");
         fgets(buffer, BUFFER_SIZE, stdin);
         buffer[strcspn(buffer, "\n")] = 0;  // 개행 문자 제거
 
