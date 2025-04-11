@@ -12,15 +12,6 @@
 #define SERVERPORT 9000
 #define BUFSIZE 512
 #define TIMEOUT_SECONDS 30
-#define MAX_CLIENTS 10
-
-typedef struct {
-    int sock;
-    struct sockaddr_in addr;
-    time_t last_recv_time;
-    char ip[16];
-    int port;
-} ClientInfo;
 
 void err_quit(const char *msg) {
     perror(msg);
@@ -28,10 +19,10 @@ void err_quit(const char *msg) {
 }
 
 int main() {
-    int server_sock;
-    struct sockaddr_in server_addr;
-    ClientInfo clients[MAX_CLIENTS] = {0};
-    int client_count = 0;
+    int server_sock, client_sock = -1;
+    struct sockaddr_in server_addr, client_addr;
+    char buf[BUFSIZE];
+    time_t last_recv_time;
     
     // 소켓 생성
     server_sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -59,18 +50,17 @@ int main() {
     while (1) {
         fd_set readset;
         struct timeval tv = {1, 0}; // 1초 타임아웃
-        int maxfd = server_sock;
         
         FD_ZERO(&readset);
         FD_SET(server_sock, &readset);
         
-        // 현재 연결된 모든 클라이언트 소켓을 fd_set에 추가
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i].sock > 0) {
-                FD_SET(clients[i].sock, &readset);
-                if (clients[i].sock > maxfd)
-                    maxfd = clients[i].sock;
-            }
+        int maxfd = server_sock;
+        
+        // 클라이언트가 연결되어 있으면 해당 소켓도 감시
+        if (client_sock != -1) {
+            FD_SET(client_sock, &readset);
+            if (client_sock > maxfd)
+                maxfd = client_sock;
         }
         
         // select로 입출력 가능한 소켓 감시
@@ -81,73 +71,53 @@ int main() {
         
         // 새로운 클라이언트 연결 체크
         if (FD_ISSET(server_sock, &readset)) {
-            struct sockaddr_in client_addr;
-            socklen_t client_addr_size = sizeof(client_addr);
-            int client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_size);
-            
-            if (client_sock == -1) {
-                err_quit("accept()");
-            }
-            
-            // 새 클라이언트 정보 저장
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].sock == 0) {
-                    clients[i].sock = client_sock;
-                    clients[i].addr = client_addr;
-                    clients[i].last_recv_time = time(NULL);
-                    strcpy(clients[i].ip, inet_ntoa(client_addr.sin_addr));
-                    clients[i].port = ntohs(client_addr.sin_port);
-                    client_count++;
-                    printf("\n[TCP 서버] 클라이언트 접속: IP=%s, Port=%d\n",
-                           clients[i].ip, clients[i].port);
-                    break;
+            if (client_sock == -1) {  // 현재 연결된 클라이언트가 없을 때만 새 연결 수락
+                socklen_t client_addr_size = sizeof(client_addr);
+                client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_size);
+                
+                if (client_sock == -1) {
+                    err_quit("accept()");
                 }
+                
+                last_recv_time = time(NULL);
+                printf("\n[TCP 서버] 클라이언트 접속: IP=%s, Port=%d\n",
+                       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
             }
         }
         
-        // 각 클라이언트의 데이터 수신 체크 및 타임아웃 처리
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i].sock > 0) {
-                // 타임아웃 체크
-                time_t current_time = time(NULL);
-                if (current_time - clients[i].last_recv_time >= TIMEOUT_SECONDS) {
-                    printf("클라이언트 타임아웃으로 연결 종료 (IP=%s, Port=%d)\n",
-                           clients[i].ip, clients[i].port);
-                    close(clients[i].sock);
-                    clients[i].sock = 0;
-                    client_count--;
+        // 연결된 클라이언트 처리
+        if (client_sock != -1 && FD_ISSET(client_sock, &readset)) {
+            // 타임아웃 체크
+            time_t current_time = time(NULL);
+            if (current_time - last_recv_time >= TIMEOUT_SECONDS) {
+                printf("클라이언트 타임아웃으로 연결 종료\n");
+                close(client_sock);
+                client_sock = -1;
+                continue;
+            }
+            
+            // 데이터 수신
+            memset(buf, 0, BUFSIZE);
+            int received = recv(client_sock, buf, BUFSIZE, 0);
+            
+            if (received <= 0) {
+                if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+                    printf("클라이언트 연결 종료\n");
+                    close(client_sock);
+                    client_sock = -1;
                     continue;
                 }
+            } else {
+                // 데이터 수신 성공
+                last_recv_time = time(NULL);
+                printf("[TCP/%s:%d] %s\n", inet_ntoa(client_addr.sin_addr),
+                       ntohs(client_addr.sin_port), buf);
                 
-                // 데이터 수신 체크
-                if (FD_ISSET(clients[i].sock, &readset)) {
-                    char buf[BUFSIZE];
-                    memset(buf, 0, BUFSIZE);
-                    int received = recv(clients[i].sock, buf, BUFSIZE, 0);
-                    
-                    if (received <= 0) {
-                        if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-                            printf("클라이언트 연결 종료 (IP=%s, Port=%d)\n",
-                                   clients[i].ip, clients[i].port);
-                            close(clients[i].sock);
-                            clients[i].sock = 0;
-                            client_count--;
-                            continue;
-                        }
-                    } else {
-                        // 데이터 수신 성공
-                        clients[i].last_recv_time = time(NULL);
-                        printf("[TCP/%s:%d] %s\n", clients[i].ip, clients[i].port, buf);
-                        
-                        // 에코
-                        if (send(clients[i].sock, buf, received, 0) == -1) {
-                            printf("send() 실패 (IP=%s, Port=%d)\n",
-                                   clients[i].ip, clients[i].port);
-                            close(clients[i].sock);
-                            clients[i].sock = 0;
-                            client_count--;
-                        }
-                    }
+                // 에코
+                if (send(client_sock, buf, received, 0) == -1) {
+                    printf("send() 실패\n");
+                    close(client_sock);
+                    client_sock = -1;
                 }
             }
         }
