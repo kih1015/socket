@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 
 #define SERVERIP "127.0.0.1"
 #define SERVERPORT 9000
@@ -34,36 +35,59 @@ int main() {
         err_quit("connect()");
     
     printf("서버 연결 완료\n");
+    printf("메시지를 입력하세요 (종료하려면 빈 줄 입력):\n");
     
-    // 데이터 통신
     while (1) {
-        // 데이터 입력
-        printf("\n[보낼 데이터] ");
-        if (fgets(buf, BUFSIZE, stdin) == NULL)
-            break;
+        fd_set readset;
+        FD_ZERO(&readset);
+        FD_SET(sock, &readset);
+        FD_SET(STDIN_FILENO, &readset);
         
-        // 문자열 끝의 개행 문자 제거
-        int len = strlen(buf);
-        if (buf[len-1] == '\n')
-            buf[len-1] = '\0';
+        int maxfd = (sock > STDIN_FILENO ? sock : STDIN_FILENO);
+        struct timeval tv = {1, 0}; // 1초 타임아웃
         
-        if (strlen(buf) == 0)
-            break;
+        int ready = select(maxfd + 1, &readset, NULL, NULL, &tv);
+        if (ready == -1) {
+            err_quit("select()");
+        }
         
-        // 데이터 전송
-        if (send(sock, buf, strlen(buf), 0) == -1)
-            err_quit("send()");
+        // 서버로부터 데이터 수신
+        if (FD_ISSET(sock, &readset)) {
+            memset(buf, 0, BUFSIZE);
+            int received = recv(sock, buf, BUFSIZE - 1, 0);
+            
+            if (received <= 0) {
+                if (received == 0) {
+                    printf("\n서버 연결 종료\n");
+                } else {
+                    printf("\n서버 수신 오류\n");
+                }
+                break;
+            }
+            
+            buf[received] = '\0';
+            printf("[에코 메시지] %s\n", buf);
+        }
         
-        // 데이터 수신
-        int received = recv(sock, buf, BUFSIZE-1, 0);
-        if (received == -1)
-            err_quit("recv()");
-        else if (received == 0)
-            break;
-        
-        // 받은 데이터 출력
-        buf[received] = '\0';
-        printf("[에코 메시지] %s\n", buf);
+        // 키보드 입력 처리
+        if (FD_ISSET(STDIN_FILENO, &readset)) {
+            if (fgets(buf, BUFSIZE, stdin) == NULL)
+                break;
+            
+            // 문자열 끝의 개행 문자 제거
+            int len = strlen(buf);
+            if (buf[len-1] == '\n')
+                buf[len-1] = '\0';
+            
+            if (strlen(buf) == 0)
+                break;
+            
+            // 데이터 전송
+            if (send(sock, buf, strlen(buf), 0) == -1) {
+                printf("\n서버 전송 오류\n");
+                break;
+            }
+        }
     }
     
     close(sock);
