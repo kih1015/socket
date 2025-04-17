@@ -23,10 +23,10 @@ void set_nonblocking_mode(int sock) {
     fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 }
 
-// 모든 클라이언트에게 메시지 브로드캐스트
+// 모든 클라이언트에게 메시지 브로드캐스트 (수정된 부분)
 void broadcast_message(fd_set *active_socks, int server_sock, char *msg, int msg_len, int sender_sock) {
     for (int i = 0; i <= FD_SETSIZE; i++) {
-        if (i != server_sock && FD_ISSET(i, active_socks) && i != sender_sock) {
+        if (i != server_sock && FD_ISSET(i, active_socks)) {
             int retval = send(i, msg, msg_len, 0);
             if (retval == -1 && errno != EWOULDBLOCK) {
                 printf("브로드캐스트 실패 - socket: %d\n", i);
