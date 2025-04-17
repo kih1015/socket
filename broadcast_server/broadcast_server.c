@@ -7,7 +7,7 @@
 #include <sys/time.h>
 #include <sys/select.h>
 #include <errno.h>
-#include <fcntl.h>  // fcntl() 함수를 위한 헤더
+#include <fcntl.h>
 
 #define SERVERPORT 9000
 #define BUFSIZE 512

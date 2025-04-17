@@ -66,8 +66,7 @@ int main() {
             }
             
             // 받은 데이터 출력
-            printf("\n[메시지] %s\n", buf);
-            printf("메시지 입력: ");
+            printf("[메시지] %s\n", buf);
             fflush(stdout);
         }
         
