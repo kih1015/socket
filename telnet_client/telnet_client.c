@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <signal.h>
 #include <termios.h>
+#include <netinet/tcp.h>
 
 #define IAC  255    // 0xFF: Interpret As Command
 #define WILL 251    // 0xFB: 옵션 활성화 요청
@@ -140,6 +141,10 @@ int main(int argc, char *argv[]) {
     int sock;
     struct sockaddr_in serv_addr;
     struct termios raw_tios;
+    
+    // Nagle 알고리즘 비활성화
+    int val = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
     
     if (argc != 3) {
         printf("Usage : %s <IP> <port>\n", argv[0]);
