@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <errno.h>
+#include <termios.h>
 
 #define SERVERPORT 23
 #define BUFSIZE 512
@@ -16,11 +17,44 @@ void err_quit(const char *msg) {
     exit(1);
 }
 
+// 터미널 설정을 위한 전역 변수
+struct termios orig_termios;
+
+// RAW 모드 설정
+void set_raw_mode() {
+    tcgetattr(STDIN_FILENO, &orig_termios);
+    struct termios raw = orig_termios;
+    
+    // 입력 모드 플래그
+    raw.c_iflag &= ~(ICRNL | IXON);
+    
+    // 출력 모드 플래그
+    raw.c_oflag &= ~(OPOST);
+    
+    // 로컬 모드 플래그
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    
+    // 제어 문자
+    raw.c_cc[VMIN] = 1;  // 최소 1바이트 입력
+    raw.c_cc[VTIME] = 0; // 타임아웃 없음
+    
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
+
+// 원래 모드로 복구
+void restore_terminal() {
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
+
 int main() {
     int server_sock;
     struct sockaddr_in server_addr;
     int client_socks[MAX_CLIENTS] = {0};
     char buf[BUFSIZE];
+    
+    // RAW 모드 설정
+    set_raw_mode();
+    atexit(restore_terminal);
     
     server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock == -1) err_quit("socket()");
