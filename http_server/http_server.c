@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #define PORT 8080
-#define REPLY
+#define REPLY \
   "HTTP/1.1 200 OK\r\n" \
   "Content-Type: text/html\r\n" \
   "Content-Length: 13\r\n" \
