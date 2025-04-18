@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <signal.h>
+#include <termios.h>
 
 #define IAC  255    // 0xFF: Interpret As Command
 #define WILL 251    // 0xFB: 옵션 활성화 요청
@@ -18,20 +19,32 @@ enum {
     STATE_IAC_CMD   // IAC 명령 수신
 };
 
-// 전역 변수로 자식 프로세스 ID 저장
+// 전역 변수로 자식 프로세스 ID와 터미널 설정 저장
 pid_t childPid = -1;
+struct termios org_tios;
 
 void error_handling(char *message) {
     perror(message);
     exit(1);
 }
 
+// 터미널 설정 복원
+void restore_terminal() {
+    tcsetattr(0, TCSANOW, &org_tios);
+}
+
 // SIGINT 핸들러
 void sigint_handler(int signo) {
+    restore_terminal();  // 터미널 설정 복원
     if (childPid > 0) {
         kill(childPid, SIGTERM);
     }
     exit(0);
+}
+
+// 프로그램 종료 시 터미널 설정 복원
+void cleanup() {
+    restore_terminal();
 }
 
 // WONT 응답 전송
@@ -103,15 +116,15 @@ void receiver_process(int sock, pid_t parentPid) {
 
 // 송신 프로세스
 void sender_process(int sock) {
-    char buf[1024];
-    int str_len;
+    char c;
+    int n;
 
     while (1) {
-        str_len = read(0, buf, sizeof(buf));
-        if (str_len <= 0) {
+        n = read(0, &c, 1);  // 한 문자씩 읽기
+        if (n <= 0) {
             break;
         }
-        if (write(sock, buf, str_len) <= 0) {
+        if (write(sock, &c, 1) <= 0) {  // 한 문자씩 전송
             perror("write (client->server)");
             break;
         }
@@ -126,11 +139,23 @@ void sender_process(int sock) {
 int main(int argc, char *argv[]) {
     int sock;
     struct sockaddr_in serv_addr;
+    struct termios raw_tios;
     
     if (argc != 3) {
         printf("Usage : %s <IP> <port>\n", argv[0]);
         exit(1);
     }
+    
+    // 터미널 설정
+    tcgetattr(0, &org_tios);  // 현재 설정 저장
+    raw_tios = org_tios;
+    raw_tios.c_lflag &= ~(ECHO | ICANON | ISIG);  // 에코, 정규 모드, 시그널 비활성화
+    raw_tios.c_cc[VMIN] = 1;   // 최소 1문자
+    raw_tios.c_cc[VTIME] = 0;  // 타임아웃 없음
+    tcsetattr(0, TCSANOW, &raw_tios);
+    
+    // 프로그램 종료 시 터미널 설정 복원
+    atexit(cleanup);
     
     // SIGINT 핸들러 등록
     signal(SIGINT, sigint_handler);
