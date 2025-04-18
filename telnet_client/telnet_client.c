@@ -1,3 +1,5 @@
+// github 레포 주소: https://github.com/kih1015/socket
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
