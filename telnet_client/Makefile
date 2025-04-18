@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra
-TARGET = telnet_server
+TARGET = telnet_client
 
 all: $(TARGET)
 
