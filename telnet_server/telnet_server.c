@@ -12,6 +12,20 @@
 #define BUFSIZE 512
 #define MAX_CLIENTS 10
 
+// telnet 프로토콜 명령어
+#define IAC     255  // 0xFF: Interpret As Command
+#define WILL    251  // 0xFB: 옵션 활성화 요청
+#define WONT    252  // 0xFC: 옵션 비활성화 통보
+#define DO      253  // 0xFD: 옵션 활성화 요청
+#define DONT    254  // 0xFE: 옵션 비활성화 요청
+
+// 상태 머신 상태
+enum {
+    STATE_DATA,      // 일반 데이터
+    STATE_IAC,       // IAC 수신
+    STATE_OPTION     // 옵션 수신
+};
+
 void err_quit(const char *msg) {
     perror(msg);
     exit(1);
@@ -44,6 +58,22 @@ void set_raw_mode() {
 // 원래 모드로 복구
 void restore_terminal() {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
+
+// IAC 명령에 대한 응답 전송
+void send_telnet_response(int sock, unsigned char cmd, unsigned char option) {
+    unsigned char response[3];
+    response[0] = IAC;
+    
+    if (cmd == DO)
+        response[1] = WONT;    // DO에 대해 WONT로 응답
+    else if (cmd == WILL)
+        response[1] = DONT;    // WILL에 대해 DONT로 응답
+    else
+        return;                // 다른 명령은 무시
+        
+    response[2] = option;
+    write(sock, response, 3);
 }
 
 int main() {
