@@ -1,14 +1,11 @@
 CC = gcc
 CFLAGS = -Wall -Wextra
-TARGETS = telnet_server telnet_client
+TARGET = telnet_server
 
-all: $(TARGETS)
+all: $(TARGET)
 
-telnet_server: telnet_server.c
-	$(CC) $(CFLAGS) -o $@ $<
-
-telnet_client: telnet_client.c
+$(TARGET): $(TARGET).c
 	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f $(TARGETS) 
+	rm -f $(TARGET) 
