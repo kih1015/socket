@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <errno.h>
+#include <termios.h>
 
 #define SERVERPORT 23
 #define BUFSIZE 512
@@ -16,11 +17,33 @@ void err_quit(const char *msg) {
     exit(1);
 }
 
+// 터미널 설정을 위한 전역 변수
+struct termios orig_termios;
+
+// 터미널 설정 초기화
+void init_terminal() {
+    tcgetattr(STDIN_FILENO, &orig_termios);
+    struct termios raw = orig_termios;
+    raw.c_lflag &= ~(ECHO | ICANON | ISIG);
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+}
+
+// 터미널 설정 복원
+void restore_terminal() {
+    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+}
+
 int main() {
     int server_sock;
     struct sockaddr_in server_addr;
     int client_socks[MAX_CLIENTS] = {0};
     char buf[BUFSIZE];
+    
+    // 터미널 설정
+    init_terminal();
+    
+    // 프로그램 종료 시 터미널 설정 복원
+    atexit(restore_terminal);
     
     // 소켓 생성
     server_sock = socket(AF_INET, SOCK_STREAM, 0);
