@@ -29,7 +29,7 @@ static const char *mime_type(const char *path) {
 
 static void send_error(int c, int code, const char *msg) {
     char body[128];
-    int n = snprintf(body, sizeof body, 
+    int n = snprintf(body, sizeof(body), 
         "<html><h1>%d %s</h1></html>", code, msg);
     dprintf(c,
         "HTTP/1.1 %d %s\r\n"
@@ -40,7 +40,7 @@ static void send_error(int c, int code, const char *msg) {
 
 static void serve_client(int c) {
     char buf[BUF_SZ] = {0};
-    int len = read(c, buf, sizeof buf - 1);
+    int len = read(c, buf, sizeof(buf) - 1);
     if (len <= 0) return;
 
     char method[8], path_raw[1024];
@@ -59,10 +59,10 @@ static void serve_client(int c) {
     }
 
     const char *path_req = (*path_raw == '/') ? path_raw + 1 : path_raw;
-    if (*path_req == '\0') path_req = "/index.html";
+    if (*path_req == '\0') path_req = "index.html";
         
     char path_full[PATH_MAX];
-    snprintf(path_full, sizeof path_full, "%s%s", WEBROOT, path_req);
+    snprintf(path_full, PATH_MAX, "%s/%s", WEBROOT, path_req);
 
     int fd = open(path_full, O_RDONLY);
     if (fd < 0) {
@@ -96,14 +96,14 @@ int main(void) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
 
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof opt);
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(PORT),
-        .sin_addr = { INADDR_ANY }
+        .sin_addr.s_addr = htonl(INADDR_ANY)
     };
-    bind(s, (struct sockaddr *)&addr, sizeof addr);
+    bind(s, (struct sockaddr *)&addr, sizeof(addr));
     listen(s, BACKLOG);
 
     printf("Serving %s on http://0.0.0.0:%d\n", WEBROOT, PORT);
