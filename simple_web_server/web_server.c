@@ -68,7 +68,7 @@ static void serve_client(int c) {
     if (*path_req == '\0') path_req = "/index.html";
         
     char path_full[PATH_MAX];
-    sprintf(path_full, sizeof path_full, "%s%s", WEBROOT, path_req);
+    snprintf(path_full, sizeof path_full, "%s%s", WEBROOT, path_req);
     printf("[DEBUG] Full path: %s\n", path_full);
 
     int fd = open(path_full, O_RDONLY);
