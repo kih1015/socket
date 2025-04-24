@@ -15,6 +15,7 @@
 #define BACKLOG 16
 #define BUF_SZ 4096
 #define WEBROOT "./www"
+#define TIMEOUT 5  // Keep-Alive timeout in seconds
 
 static const char *mime_type(const char *path) {
     const char *dot = strrchr(path, '.');
@@ -27,69 +28,106 @@ static const char *mime_type(const char *path) {
     return "application/octet-stream";
 }
 
-static void send_error(int c, int code, const char *msg) {
+static void send_error(int c, int code, const char *msg, int keep_alive) {
     char body[128];
     int n = snprintf(body, sizeof(body), 
         "<html><h1>%d %s</h1></html>", code, msg);
     dprintf(c,
         "HTTP/1.1 %d %s\r\n"
         "Content-Type: text/html\r\n"
-        "Content-Length: %d\r\n\r\n%s",
-        code, msg, n, body);
+        "Content-Length: %d\r\n"
+        "Connection: %s\r\n"
+        "\r\n%s",
+        code, msg, n, 
+        keep_alive ? "keep-alive" : "close",
+        body);
+}
+
+static int check_keep_alive(const char *buf) {
+    char *connection = strcasestr(buf, "\nConnection:");
+    if (!connection) return 0;
+    
+    return (strcasestr(connection, "keep-alive") != NULL);
 }
 
 static void serve_client(int c) {
-    char buf[BUF_SZ] = {0};
-    int len = read(c, buf, sizeof(buf) - 1);
-    if (len <= 0) return;
+    struct timeval tv;
+    int keep_alive = 1;  // 기본값은 keep-alive 활성화
 
-    char method[8], path_raw[1024];
-    if (sscanf(buf, "%7s %1023s", method, path_raw) != 2) {
-        send_error(c, 400, "Bad Request");
-        return;
-    }
+    while (keep_alive) {
+        // 타임아웃 설정
+        tv.tv_sec = TIMEOUT;
+        tv.tv_usec = 0;
+        setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    if (strcmp(method, "GET")) {
-        send_error(c, 405, "Method Not Allowed");
-        return;
-    }
-    if (strstr(path_raw, "..")) {
-        send_error(c, 400, "Bad Request");
-        return;
-    }
+        char buf[BUF_SZ] = {0};
+        int len = read(c, buf, sizeof(buf) - 1);
+        if (len <= 0) break;  // 타임아웃이나 연결 종료
 
-    const char *path_req = (*path_raw == '/') ? path_raw + 1 : path_raw;
-    if (*path_req == '\0') path_req = "index.html";
-        
-    char path_full[PATH_MAX];
-    snprintf(path_full, PATH_MAX, "%s/%s", WEBROOT, path_req);
+        // Keep-Alive 헤더 확인
+        keep_alive = check_keep_alive(buf);
 
-    int fd = open(path_full, O_RDONLY);
-    if (fd < 0) {
-        send_error(c, 404, "Not Found");
-        return;
-    }
+        char method[8], path_raw[1024];
+        if (sscanf(buf, "%7s %1023s", method, path_raw) != 2) {
+            send_error(c, 400, "Bad Request", keep_alive);
+            if (!keep_alive) break;
+            continue;
+        }
 
-    struct stat st;
-    if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+        if (strcmp(method, "GET")) {
+            send_error(c, 405, "Method Not Allowed", keep_alive);
+            if (!keep_alive) break;
+            continue;
+        }
+        if (strstr(path_raw, "..")) {
+            send_error(c, 400, "Bad Request", keep_alive);
+            if (!keep_alive) break;
+            continue;
+        }
+
+        const char *path_req = (*path_raw == '/') ? path_raw + 1 : path_raw;
+        if (*path_req == '\0') path_req = "index.html";
+            
+        char path_full[PATH_MAX];
+        snprintf(path_full, PATH_MAX, "%s/%s", WEBROOT, path_req);
+
+        int fd = open(path_full, O_RDONLY);
+        if (fd < 0) {
+            send_error(c, 404, "Not Found", keep_alive);
+            if (!keep_alive) break;
+            continue;
+        }
+
+        struct stat st;
+        if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+            close(fd);
+            send_error(c, 404, "Not Found", keep_alive);
+            if (!keep_alive) break;
+            continue;
+        }
+
+        const char *type = mime_type(path_full);
+        dprintf(c,
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: %ld\r\n"
+            "Content-Type: %s\r\n"
+            "Connection: %s\r\n"
+            "\r\n",
+            (long)st.st_size, type,
+            keep_alive ? "keep-alive" : "close");
+
+        off_t offset = 0;
+        while (offset < st.st_size) {
+            ssize_t sent = sendfile(c, fd, &offset, st.st_size - offset);
+            if (sent <= 0) {
+                keep_alive = 0;
+                break;
+            }
+        }
         close(fd);
-        send_error(c, 404, "Not Found");
-        return;
-    }
 
-    const char *type = mime_type(path_full);
-    dprintf(c,
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Length: %ld\r\n"
-        "Content-Type: %s\r\n\r\n",
-        (long)st.st_size, type);
-
-    off_t offset = 0;
-    while (offset < st.st_size) {
-        ssize_t sent = sendfile(c, fd, &offset, st.st_size - offset);
-        if (sent <= 0) break;
+        if (!keep_alive) break;
     }
-    close(fd);
 }
 
 int main(void) {
