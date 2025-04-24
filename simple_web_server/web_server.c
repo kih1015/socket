@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/sendfile.h>
 #include <sys/wait.h>
+#include <errno.h>
 #include <signal.h>
 
 #define PORT 8080
@@ -95,8 +96,8 @@ static void serve_client(int c) {
 
     off_t offset = 0;
     while (offset < st.st_size) {
-        ssize_t sent = sendfile(c, fd, offset, st.st_size - offset);
-        if (send <= 0) {
+        ssize_t sent = sendfile(c, fd, &offset, st.st_size - offset);
+        if (sent <= 0) {
             printf("[DEBUG] sendfile failed or connection closed\n");
             break;
         }
