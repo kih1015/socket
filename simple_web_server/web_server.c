@@ -1,9 +1,14 @@
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
+#include <fcntl.h>
+#include <linux/limits.h>
+#include <sys/stat.h>
+#include <sys/sendfile.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 #define PORT 8080
 #define BACKLOG 16
