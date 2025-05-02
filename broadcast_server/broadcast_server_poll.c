@@ -25,7 +25,7 @@ void set_nonblocking_mode(int sock) {
 }
 
 // 모든 클라이언트에게 메시지 브로드캐스트
-void broadcast_message(struct pollfd *fds, int nfds, int server_sock, char *msg, int msg_len, int sender_sock) {
+void broadcast_message(struct pollfd *fds, int nfds, int server_sock, char *msg, int msg_len) {
     for (int i = 0; i < nfds; i++) {
         if (fds[i].fd != server_sock && fds[i].fd != -1) {
             int retval = send(fds[i].fd, msg, msg_len, 0);
@@ -154,7 +154,7 @@ int main() {
                 printf("[TCP/socket=%d] %s\n", fds[i].fd, buf);
                 
                 // 모든 클라이언트에게 브로드캐스트
-                broadcast_message(fds, nfds, server_sock, buf, retval, fds[i].fd);
+                broadcast_message(fds, nfds, server_sock, buf, retval);
             }
         }
     }
