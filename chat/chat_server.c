@@ -31,23 +31,19 @@ typedef struct {
     int is_conn;
 } userinfo_t;
 
-// 최대 10명까지 관리
-typedef struct {
-    userinfo_t *list[MAX_USERS];
-    int count;
-} user_manager_t;
-
-static user_manager_t manager = {.count = 0};
+// 전역 사용자 배열과 수
+static userinfo_t *users[MAX_USERS] = {0};
+static int client_num = 0;
 
 // 사용자 목록 출력
 void show_userinfo() {
     printf("=== 사용자 목록 ===\n");
-    for (int i = 0; i < manager.count; ++i) {
-        userinfo_t *u = manager.list[i];
+    for (int i = 0; i < client_num; ++i) {
+        userinfo_t *u = users[i];
         if (u) {
             printf("[%d] %16s\tfd=%d\t%s\n",
                    i,
-                   u->name,
+                   u->name[0] ? u->name : "(no name)",
                    u->sock,
                    u->is_conn ? "connected" : "disconnected");
         }
@@ -58,19 +54,18 @@ void show_userinfo() {
 void *client_process(void *arg) {
     userinfo_t *user = (userinfo_t *)arg;
     char buf[256];
-    char buf2[256];
+    char buf2[512];
     int len;
 
-    // 1) 환영 메시지 및 이름 요청
+    // 1) 환영 메시지 및 닉네임 요청
     snprintf(buf, sizeof(buf), "Welcome!\nInput user name: ");
     send(user->sock, buf, strlen(buf), 0);
 
-    // 2) 이름 수신
+    // 2) 닉네임 수신
     len = recv(user->sock, buf, NAME_LEN - 1, 0);
     if (len <= 0) {
         user->is_conn = 0;
         close(user->sock);
-        free(user);
         return NULL;
     }
     buf[len] = '\0';
@@ -84,23 +79,21 @@ void *client_process(void *arg) {
         int rb = recv(user->sock, buf, sizeof(buf) - 1, 0);
         if (rb <= 0) {
             user->is_conn = 0;
+            close(user->sock);
             printf("user %s disconnected\n", user->name);
-            break;
+            return NULL;
         }
         buf[rb] = '\0';
-        // 모든 연결된 클라이언트에 전송
-        for (int i = 0; i < manager.count; ++i) {
-            userinfo_t *u = manager.list[i];
-            if (u && u->is_conn) {
+        // 브로드캐스트
+        for (int i = 0; i < client_num; ++i) {
+            userinfo_t *u = users[i];
+            if (u->is_conn) {
                 snprintf(buf2, sizeof(buf2), "[%s] %s\n", user->name, buf);
                 send(u->sock, buf2, strlen(buf2), 0);
             }
         }
     }
 
-    // 4) 연결 종료
-    close(user->sock);
-    free(user);
     return NULL;
 }
 
@@ -132,7 +125,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // 3) epoll 생성 및 서버 FD 등록
+    // 3) epoll 생성 및 등록
     int epfd = epoll_create1(0);
     ev.events = EPOLLIN;
     ev.data.fd = sd;
@@ -152,34 +145,31 @@ int main() {
         for (int i = 0; i < nfd; ++i) {
             int fd = events[i].data.fd;
             if (fd == sd) {
-                // 새 클라이언트 연결 수락
+                // 새 연결
                 ns = accept(sd, (struct sockaddr *)&cli, &clientlen);
                 if (ns == -1) continue;
-                // 사용자 구조체 할당 및 초기화
+                // 구조체 할당 및 초기화
                 userinfo_t *user = malloc(sizeof(userinfo_t));
                 user->sock = ns;
                 user->is_conn = 1;
                 memset(user->name, 0, NAME_LEN);
-                // 스레드 실행
+                // 스레드 생성
                 pthread_create(&user->thread, NULL, client_process, user);
-                // 매니저에 등록
-                if (manager.count < MAX_USERS) {
-                    manager.list[manager.count++] = user;
+                // 배열에 추가
+                if (client_num < MAX_USERS) {
+                    users[client_num++] = user;
                 } else {
                     close(ns);
                     free(user);
                 }
 
-            } else if (fd == STDIN_FILENO) {
-                // stdin 명령 처리
-                char command[64];
-                if (!fgets(command, sizeof(command), stdin)) continue;
-                strtok(command, "\r\n");
-                if (strcmp(command, "users") == 0) {
-                    show_userinfo();
-                }
+            } else {
+                // stdin 처리
+                char cmd[64];
+                if (!fgets(cmd, sizeof(cmd), stdin)) continue;
+                strtok(cmd, "\r\n");
+                if (strcmp(cmd, "users") == 0) show_userinfo();
                 printf("> "); fflush(stdout);
-
             }
         }
     }
