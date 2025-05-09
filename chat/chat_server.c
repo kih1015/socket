@@ -208,6 +208,7 @@ void *client_process(void *arg) {
 
                 continue;
             }
+        }
 
         // 일반 메시지: 방 번호에 따라 라우팅
         if (user->chat_room == 0) {
