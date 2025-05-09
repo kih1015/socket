@@ -4,7 +4,8 @@
  * - 여러 클라이언트 동시 접속 지원
  * - 접속 시 사용자 이름 입력 요청
  * - 에코 및 브로드캐스트
- * - 명령어 "users"로 접속 사용자 목록 출력
+ * - 클라이언트에서 "/users" 입력 시 목록 전송
+ * - 서버 콘솔에서 "users" 입력 시 목록 출력
  */
 
 #include <stdio.h>
@@ -31,11 +32,11 @@ typedef struct {
     int is_conn;
 } userinfo_t;
 
-// 전역 사용자 배열과 수
+// 전역 사용자 배열 및 개수
 static userinfo_t *users[MAX_USERS] = {0};
 static int client_num = 0;
 
-// 사용자 목록 출력
+// 사용자 목록을 콘솔에 출력
 void show_userinfo() {
     printf("=== 사용자 목록 ===\n");
     for (int i = 0; i < client_num; ++i) {
@@ -50,17 +51,29 @@ void show_userinfo() {
     }
 }
 
+// 사용자 목록을 특정 클라이언트에 전송
+void send_user_list(int dest_sock) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), "=== 현재 접속자 목록 ===\n");
+    send(dest_sock, buf, strlen(buf), 0);
+    for (int i = 0; i < client_num; ++i) {
+        userinfo_t *u = users[i];
+        if (u) {
+            snprintf(buf, sizeof(buf), "%s\n", u->name[0] ? u->name : "(no name)");
+            send(dest_sock, buf, strlen(buf), 0);
+        }
+    }
+}
+
 // 클라이언트 처리 스레드
 void *client_process(void *arg) {
     userinfo_t *user = (userinfo_t *)arg;
-    char buf[256];
-    char buf2[512];
+    char buf[512], msg[640];
     int len;
 
     // 1) 환영 메시지 및 닉네임 요청
-    snprintf(buf, sizeof(buf), "Welcome!\nInput user name: ");
-    send(user->sock, buf, strlen(buf), 0);
-
+    send(user->sock, "Welcome!\nInput user name: ", 23, 0);
+    
     // 2) 닉네임 수신
     len = recv(user->sock, buf, NAME_LEN - 1, 0);
     if (len <= 0) {
@@ -74,7 +87,7 @@ void *client_process(void *arg) {
     user->name[NAME_LEN - 1] = '\0';
     printf("user name: %s\n", user->name);
 
-    // 3) 에코 및 브로드캐스트
+    // 3) 메시지 루프
     while (1) {
         int rb = recv(user->sock, buf, sizeof(buf) - 1, 0);
         if (rb <= 0) {
@@ -84,16 +97,23 @@ void *client_process(void *arg) {
             return NULL;
         }
         buf[rb] = '\0';
-        // 브로드캐스트
+        strtok(buf, "\r\n");
+
+        // 클라이언트 명령어 처리
+        if (strcmp(buf, "/users") == 0) {
+            send_user_list(user->sock);
+            continue;
+        }
+        
+        // 브로드캐스트 메시지 생성
+        snprintf(msg, sizeof(msg), "[%s] %s\n", user->name, buf);
         for (int i = 0; i < client_num; ++i) {
             userinfo_t *u = users[i];
             if (u->is_conn) {
-                snprintf(buf2, sizeof(buf2), "[%s] %s\n", user->name, buf);
-                send(u->sock, buf2, strlen(buf2), 0);
+                send(u->sock, msg, strlen(msg), 0);
             }
         }
     }
-
     return NULL;
 }
 
@@ -103,10 +123,9 @@ int main() {
     socklen_t clientlen = sizeof(cli);
     struct epoll_event ev, events[MAX_USERS];
 
-    // 1) 서버 소켓 생성
+    // 1) 서버 소켓 생성 및 옵션 설정
     if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
+        perror("socket"); exit(EXIT_FAILURE);
     }
     int opt = 1;
     setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -117,12 +136,10 @@ int main() {
     sin.sin_addr.s_addr = INADDR_ANY;
     sin.sin_port = htons(PORTNUM);
     if (bind(sd, (struct sockaddr *)&sin, sizeof(sin)) == -1) {
-        perror("bind");
-        exit(EXIT_FAILURE);
+        perror("bind"); exit(EXIT_FAILURE);
     }
     if (listen(sd, 5) == -1) {
-        perror("listen");
-        exit(EXIT_FAILURE);
+        perror("listen"); exit(EXIT_FAILURE);
     }
 
     // 3) epoll 생성 및 등록
@@ -131,7 +148,7 @@ int main() {
     ev.data.fd = sd;
     epoll_ctl(epfd, EPOLL_CTL_ADD, sd, &ev);
 
-    // 4) stdin FD 등록
+    // 4) STDIN FD 등록 (서버 콘솔 명령어)
     ev.events = EPOLLIN;
     ev.data.fd = STDIN_FILENO;
     epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);
@@ -145,15 +162,15 @@ int main() {
         for (int i = 0; i < nfd; ++i) {
             int fd = events[i].data.fd;
             if (fd == sd) {
-                // 새 연결
+                // 새 클라이언트 연결
                 ns = accept(sd, (struct sockaddr *)&cli, &clientlen);
                 if (ns == -1) continue;
-                // 구조체 할당 및 초기화
+                // 사용자 구조체 생성
                 userinfo_t *user = malloc(sizeof(userinfo_t));
                 user->sock = ns;
                 user->is_conn = 1;
                 memset(user->name, 0, NAME_LEN);
-                // 스레드 생성
+                // 스레드 실행
                 pthread_create(&user->thread, NULL, client_process, user);
                 // 배열에 추가
                 if (client_num < MAX_USERS) {
@@ -163,8 +180,8 @@ int main() {
                     free(user);
                 }
 
-            } else {
-                // stdin 처리
+            } else if (fd == STDIN_FILENO) {
+                // 서버 콘솔 명령어 처리
                 char cmd[64];
                 if (!fgets(cmd, sizeof(cmd), stdin)) continue;
                 strtok(cmd, "\r\n");
