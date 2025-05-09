@@ -156,36 +156,26 @@ void *client_process(void *arg) {
                     if (tid >= 0 && tid < client_num
                      && users[tid] && users[tid]->is_conn) {
                         if (room_count + 1 < MAX_USERS) {
-                            // 새 방 번호
                             int rno = ++room_count;
-                            rooms[rno].no = rno;
-                            rooms[rno].member[0] = user;
-                            rooms[rno].member[1] = users[tid];
-                            // 양쪽 chat_room 설정
-                            user->chat_room       = rno;
-                            users[tid]->chat_room = rno;
-                            // 알림
-                            len = snprintf(msg, sizeof(msg),
-                              "1:1 chat room #%d created with %s\n",
-                              rno, users[tid]->name);
-                            send(user->sock, msg, len, 0);
-                            len = snprintf(msg, sizeof(msg),
-                              "%s started 1:1 chat room #%d with you\n",
-                              user->name, rno);
-                            send(users[tid]->sock, msg, len, 0);
+                            rooms[rno].no              = rno;
+                            rooms[rno].member[0]       = user;
+                            rooms[rno].member[1]       = users[tid];
+                            user->chat_room            = rno;
+                            users[tid]->chat_room      = rno;
                         } else {
                             send(user->sock,
                               "Cannot create more rooms\n",
-                              23, 0);
+                              strlen("Cannot create more rooms\n"), 0);
                         }
                     } else {
                         send(user->sock,
                           "Invalid user id or not connected\n",
-                          33, 0);
+                          strlen("Invalid user id or not connected\n"), 0);
                     }
                 } else {
                     send(user->sock,
-                      "Usage: /start <id>\n", 18, 0);
+                      "Usage: /start <id>\n",
+                      strlen("Usage: /start <id>\n"), 0);
                 }
             }
             // 명령어이므로 여기서 건너뛴다
@@ -273,11 +263,10 @@ int main() {
                 u->is_conn   = 1;
                 u->chat_room = 0;
                 memset(u->name, 0, NAME_LEN);
-                // 처리 스레드
-                pthread_create(&u->thread, NULL, client_process, u);
                 // 배열에 추가
                 if (client_num < MAX_USERS) {
                     users[client_num++] = u;
+                    pthread_create(&u->thread, NULL, client_process, u);
                 } else {
                     close(ns);
                     free(u);
