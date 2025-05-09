@@ -68,28 +68,26 @@ void send_user_list(int dest_sock) {
 // 클라이언트 처리 스레드
 void *client_process(void *arg) {
     userinfo_t *user = (userinfo_t *)arg;
-    char buf[512], msg[640];
-    int len;
+    char buf[512], buf2[512], msg[640];
+    int rb;
 
     // 1) 환영 메시지 및 닉네임 요청
-    send(user->sock, "Welcome!\nInput user name: ", 23, 0);
-    
-    // 2) 닉네임 수신
-    len = recv(user->sock, buf, NAME_LEN - 1, 0);
-    if (len <= 0) {
+    send(user->sock, "Welcome!\nInput user name: ", 25, 0);
+    rb = recv(user->sock, buf, NAME_LEN-1, 0);
+    if (rb <= 0) {
         user->is_conn = 0;
         close(user->sock);
         return NULL;
     }
-    buf[len] = '\0';
+    buf[rb] = '\0';
     strtok(buf, "\r\n");
-    strncpy(user->name, buf, NAME_LEN - 1);
-    user->name[NAME_LEN - 1] = '\0';
+    strncpy(user->name, buf, NAME_LEN-1);
+    user->name[NAME_LEN-1] = '\0';
     printf("user name: %s\n", user->name);
 
-    // 3) 메시지 루프
+    // 2) 메시지 루프
     while (1) {
-        int rb = recv(user->sock, buf, sizeof(buf) - 1, 0);
+        rb = recv(user->sock, buf, sizeof(buf)-1, 0);
         if (rb <= 0) {
             user->is_conn = 0;
             close(user->sock);
@@ -97,23 +95,51 @@ void *client_process(void *arg) {
             return NULL;
         }
         buf[rb] = '\0';
-        strtok(buf, "\r\n");
+        // 개행제거
+        strtok(buf, "\n");
 
-        // 클라이언트 명령어 처리
-        if (strcmp(buf, "/users") == 0) {
-            send_user_list(user->sock);
+        // buf2에 복사하고 첫 토큰만 떼어낸다
+        strcpy(buf2, buf);
+        strtok(buf2, " ");  // buf2 == 첫 토큰
+
+        // 명령어 처리
+        if (buf[0] == '/') {
+            // /users
+            if (strcmp(buf2, "/users") == 0) {
+                send_user_list(user->sock);
+            }
+            // /dm <id> <message>
+            else if (strcmp(buf2, "/dm") == 0) {
+                char *id   = strtok(NULL, " ");
+                char *body = strtok(NULL, " ");
+                if (id && body) {
+                    // body 포인터가 buf2 기준에서 얼마나 떨어져 있는지 계산
+                    char *result = buf + (body - buf2);
+                    // 사용자 이름이 id인 대상에게 전송
+                    for (int i = 0; i < client_num; ++i) {
+                        if (users[i] &&
+                            strcmp(users[i]->name, id) == 0 &&
+                            users[i]->is_conn) {
+                            send(users[i]->sock, result, strlen(result), 0);
+                            break;
+                        }
+                    }
+                }
+            }
+            // 명령어였으므로 브로드캐스트로 넘어가지 않음
             continue;
         }
-        
-        // 브로드캐스트 메시지 생성
-        snprintf(msg, sizeof(msg), "[%s] %s\n", user->name, buf);
+
+        // 일반 브로드캐스트 메시지
+        int len = snprintf(msg, sizeof(msg),
+                           "[%s] %s\n", user->name, buf);
         for (int i = 0; i < client_num; ++i) {
-            userinfo_t *u = users[i];
-            if (u->is_conn) {
-                send(u->sock, msg, strlen(msg), 0);
+            if (users[i] && users[i]->is_conn) {
+                send(users[i]->sock, msg, len, 0);
             }
         }
     }
+
     return NULL;
 }
 
