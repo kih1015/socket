@@ -150,37 +150,64 @@ void *client_process(void *arg) {
             }
             // 3) /start <id> → 1:1 방 생성 및 참가
             else if (strcmp(buf2, "/start") == 0) {
-                char *id_str = strtok(buf + 7, " ");
-                if (id_str) {
-                    int tid = atoi(id_str);
-                    if (tid >= 0 && tid < client_num
-                     && users[tid] && users[tid]->is_conn) {
-                        if (room_count + 1 < MAX_USERS) {
-                            int rno = ++room_count;
-                            rooms[rno].no              = rno;
-                            rooms[rno].member[0]       = user;
-                            rooms[rno].member[1]       = users[tid];
-                            user->chat_room            = rno;
-                            users[tid]->chat_room      = rno;
-                        } else {
-                            send(user->sock,
-                              "Cannot create more rooms\n",
-                              strlen("Cannot create more rooms\n"), 0);
-                        }
-                    } else {
-                        send(user->sock,
-                          "Invalid user id or not connected\n",
-                          strlen("Invalid user id or not connected\n"), 0);
-                    }
-                } else {
+                // buf + 7 위치부터 띄어쓰기 기준으로 이름 한 토큰을 뽑아온다
+                char *target_name = strtok(buf + 7, " ");
+                if (!target_name) {
                     send(user->sock,
-                      "Usage: /start <id>\n",
-                      strlen("Usage: /start <id>\n"), 0);
+                        "Usage: /start <username>\n",
+                        strlen("Usage: /start <username>\n"), 0);
+                    continue;
                 }
+
+                // ➊ 이름으로 users[] 탐색
+                int tid = -1;
+                for (int i = 0; i < client_num; ++i) {
+                    if (users[i] 
+                    && users[i]->is_conn 
+                    && strcmp(users[i]->name, target_name) == 0) {
+                        tid = i;
+                        break;
+                    }
+                }
+                if (tid < 0) {
+                    send(user->sock,
+                        "User not found or not connected\n",
+                        strlen("User not found or not connected\n"), 0);
+                    continue;
+                }
+
+                // ➋ 방 생성 가능 여부 체크
+                if (room_count + 1 >= MAX_USERS) {
+                    send(user->sock,
+                        "Cannot create more rooms\n",
+                        strlen("Cannot create more rooms\n"), 0);
+                    continue;
+                }
+
+                // ➌ 새 방 번호 발급 및 등록
+                int rno = ++room_count;
+                rooms[rno].no        = rno;
+                rooms[rno].member[0] = user;
+                rooms[rno].member[1] = users[tid];
+
+                // ➍ 양쪽 chat_room 설정
+                user->chat_room       = rno;
+                users[tid]->chat_room = rno;
+
+                // ➎ 알림 메시지 전송
+                int len;
+                len = snprintf(msg, sizeof(msg),
+                            "1:1 chat room #%d created with %s\n",
+                            rno, users[tid]->name);
+                send(user->sock, msg, len, 0);
+
+                len = snprintf(msg, sizeof(msg),
+                            "%s started 1:1 chat room #%d with you\n",
+                            user->name, rno);
+                send(users[tid]->sock, msg, len, 0);
+
+                continue;
             }
-            // 명령어이므로 여기서 건너뛴다
-            continue;
-        }
 
         // 일반 메시지: 방 번호에 따라 라우팅
         if (user->chat_room == 0) {
