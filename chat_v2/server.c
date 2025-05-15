@@ -11,71 +11,60 @@
 
 #define PORTNUM 9000
 #define ROOM0   0
-#define MAX_CHATROOMS  10
+#define MAX_CHATROOMS  20  // 공용과 개인 채팅방 모두 합친 최대
+#define MAX_USERS      10
 
 typedef struct {
     int sock;
     char name[64];
     pthread_t thread;
     int is_conn;
-    int chat_room;
+    int room_no;    // 참여중인 채팅방 번호
 } userinfo_t;
 
+// 통합 채팅방 구조체
 typedef struct {
-    int no;
-    userinfo_t *member[2];
-} roominfo_t;
-
-typedef struct {
-    int   no;             // 채팅방 번호 (1부터 시작)
-    char  name[64];       // 채팅방 이름
+    int   no;              // 방 번호 (1부터 시작)
+    char  name[64];        // 방 이름 (개인방은 "user1-user2" 형태)
+    int   is_private;      // 1: 개인채팅, 0: 공용채팅
+    userinfo_t *members[MAX_USERS]; // 방에 속한 사용자 포인터
+    int   member_count;
 } chatroom_t;
 
-static userinfo_t *users[10];
-static roominfo_t rooms[10];
-static int client_num = 0;
-static int room_num = 0;
-
-static chatroom_t chatrooms[MAX_CHATROOMS];
-static int        chatroom_count = 0;
+static userinfo_t *users[MAX_USERS];
+static chatroom_t  chatrooms[MAX_CHATROOMS];
+static int client_count   = 0;
+static int chatroom_count = 0;
 
 void show_userinfo(void)
 {
-    int i;
-
     printf("%2s\t%16s\t%12s\t%s\n", "SD", "NAME", "CONNECTION", "ROOM");
-    printf("=========================================================\n");
-
-    for (i = 0; i < client_num; i++) {
-        printf("%02d\t%16s\t%12s\t%02d\n", 
-            users[i]->sock, 
-            users[i]->name, 
-            users[i]->is_conn ? "connected":"disconnected",
-            users[i]->chat_room
+    printf("========================================================\n");
+    for (int i = 0; i < client_count; i++) {
+        printf("%02d\t%16s\t%12s\t%02d\n",
+            users[i]->sock,
+            users[i]->name,
+            users[i]->is_conn?"connected":"disconnected",
+            users[i]->room_no
         );
     }
 }
 
-void resp_users(char *buf)
+// 방 생성 (공용 or 개인)
+int create_chatroom(const char *name, int is_private, userinfo_t **initial_members, int init_count)
 {
-    buf[0] = '\0';
-
-    for (int i = 0; i < client_num; i++)
-    {
-        strcat(buf, users[i]->name);
-        strcat(buf, ", ");
+    if (chatroom_count >= MAX_CHATROOMS) return -1;
+    chatroom_t *r = &chatrooms[chatroom_count];
+    r->no = chatroom_count + 1;
+    strncpy(r->name, name, 63);
+    r->name[63] = '\0';
+    r->is_private = is_private;
+    r->member_count = 0;
+    for (int i = 0; i < init_count && i < MAX_USERS; i++) {
+        r->members[r->member_count++] = initial_members[i];
     }
-}
-
-void create_room(userinfo_t *user1, userinfo_t *user2)
-{
-    rooms[room_num].no = room_num + 1;
-    rooms[room_num].member[0] = user1;
-    rooms[room_num].member[1] = user2;
-
-    user1->chat_room = room_num + 1;
-    user2->chat_room = room_num + 1;
-    room_num++;
+    chatroom_count++;
+    return r->no;
 }
 
 void resp_chatrooms(char *buf)
@@ -87,236 +76,187 @@ void resp_chatrooms(char *buf)
     }
     for (int i = 0; i < chatroom_count; i++) {
         char line[128];
-        snprintf(line, sizeof(line), "%d - %s\n",
-                 chatrooms[i].no,
-                 chatrooms[i].name);
+        snprintf(line, sizeof(line), "%d - %s %s\n",
+            chatrooms[i].no,
+            chatrooms[i].name,
+            chatrooms[i].is_private?"(private)":"(public)");
         strcat(buf, line);
     }
 }
 
-int create_chatroom(const char *name)
+// 특정 방 번호에 사용자 추가
+void join_chatroom(userinfo_t *user, int room_no)
 {
-    if (chatroom_count >= MAX_CHATROOMS) return -1;
-    chatrooms[chatroom_count].no = chatroom_count + 1;
-    strncpy(chatrooms[chatroom_count].name, name, 63);
-    chatrooms[chatroom_count].name[63] = '\0';
-    chatroom_count++;
-    return chatroom_count;
-}
-
-void show_chatrooms(void)
-{
-    printf("Chatrooms:\n");
-    printf("================================================\n");
-    if (chatroom_count == 0) {
-        printf("  (none)\n");
-    } else {
-        for (int i = 0; i < chatroom_count; i++) {
-            printf("  %2d - %s\n",
-                   chatrooms[i].no,
-                   chatrooms[i].name);
+    for (int i = 0; i < chatroom_count; i++) {
+        if (chatrooms[i].no == room_no) {
+            chatroom_t *r = &chatrooms[i];
+            if (r->member_count < MAX_USERS) {
+                r->members[r->member_count++] = user;
+                user->room_no = room_no;
+            }
+            break;
         }
     }
-    printf("================================================\n");
+}
+
+void leave_chatroom(userinfo_t *user)
+{
+    int room_no = user->room_no;
+    if (room_no == ROOM0) return;
+    for (int i = 0; i < chatroom_count; i++) {
+        if (chatrooms[i].no == room_no) {
+            chatroom_t *r = &chatrooms[i];
+            // 멤버 목록에서 제거
+            int idx = -1;
+            for (int j = 0; j < r->member_count; j++) {
+                if (r->members[j] == user) { idx = j; break; }
+            }
+            if (idx >= 0) {
+                for (int j = idx; j < r->member_count-1; j++)
+                    r->members[j] = r->members[j+1];
+                r->member_count--;
+            }
+            break;
+        }
+    }
+    user->room_no = ROOM0;
+}
+
+void broadcast_message(int room_no, const char *msg)
+{
+    for (int i = 0; i < chatroom_count; i++) {
+        if (chatrooms[i].no == room_no) {
+            for (int j = 0; j < chatrooms[i].member_count; j++) {
+                userinfo_t *u = chatrooms[i].members[j];
+                if (u->is_conn) send(u->sock, msg, strlen(msg),0);
+            }
+            break;
+        }
+    }
 }
 
 void *client_process(void *arg)
 {
-    userinfo_t *user = (userinfo_t *)arg;
-    char buf[256];
-    char buf2[256];
+    userinfo_t *user = (userinfo_t*)arg;
+    char buf[512], out[512];
     int rb;
 
-    snprintf(buf, 255, "Welcome!\n Input user name: ");
-    send(user->sock, buf, strlen(buf), 0);
-    rb = recv(user->sock, buf, 63, 0);
-    buf[rb] = '\0';
-    strtok(buf, "\n");
-    strncpy(user->name, buf, 63);
+    send(user->sock, "Welcome! Input user name: ", 28,0);
+    rb = recv(user->sock, buf, sizeof(buf)-1,0);
+    buf[rb]=0; strtok(buf,"\n");
+    strncpy(user->name, buf,63);
     user->is_conn = 1;
-    user->chat_room = ROOM0;
+    user->room_no = ROOM0;
 
-    while (1) {
-        rb = recv(user->sock, buf, sizeof(buf) - 1, 0);
-        if (rb <= 0) {
-            user->is_conn = 0;
-            printf("user %s disconnected\n", user->name);
-            pthread_exit(NULL);
-        }
-        buf[rb] = '\0';
-        strtok(buf, "\n");
-        strcpy(buf2, buf);
-        char *cmd = strtok(buf2, " ");
+    while ((rb=recv(user->sock, buf, sizeof(buf)-1,0))>0) {
+        buf[rb]=0; strtok(buf,"\n");
+        char cmd_buf[512]; strcpy(cmd_buf,buf);
+        char *cmd = strtok(cmd_buf," ");
 
-        if (buf[0] == '/') {
-            if (strcmp(cmd, "/users") == 0) {
-                resp_users(buf2);
-                send(user->sock, buf2, strlen(buf2), 0);
-            } else if (strcmp(cmd, "/dm") == 0) {
-                char *id = strtok(NULL, " ");
-                char *text = strtok(NULL, "");
-                if (!id || !text) {
-                    send(user->sock, "Usage: /dm <user> <message>\n", 30, 0);
-                    continue;
+        if (cmd && cmd[0]=='/') {
+            if (!strcmp(cmd,"/users")) {
+                char list[256]; resp_users(list);
+                send(user->sock,list,strlen(list),0);
+            }
+            else if (!strcmp(cmd,"/new")) {
+                char *rname = strtok(NULL,"");
+                if (!rname) send(user->sock,"Usage: /new <name>\n",21,0);
+                else {
+                    int no = create_chatroom(rname,0,NULL,0);
+                    snprintf(out,sizeof(out),"Chatroom '%s' created (#%d)\n",rname,no);
+                    send(user->sock,out,strlen(out),0);
                 }
-                char out[256];
-                snprintf(out, sizeof(out), "[DM %s->%s] %s\n", user->name, id, text);
-                int found = 0;
-                for (int i = 0; i < client_num; i++) {
-                    if (users[i]->is_conn && strcmp(users[i]->name, id) == 0) {
-                        send(users[i]->sock, out, strlen(out), 0);
-                        found = 1;
-                        break;
-                    }
-                }
-                if (!found) {
-                    send(user->sock, "User not found or disconnected.\n", 33, 0);
-                }
-            } else if (strcmp(cmd, "/start") == 0) {
-                char *id = strtok(NULL, " ");
+            }
+            else if (!strcmp(cmd,"/start")) {
+                char *id = strtok(NULL," ");
                 if (!id) continue;
-                for (int i = 0; i < client_num; i++) {
-                    if (strcmp(users[i]->name, id) == 0) {
-                        create_room(user, users[i]);
-                        break;
-                    }
-                }
-            } else if (strcmp(cmd, "/new") == 0) {
-                char *room_name = strtok(NULL, "\n");
-                if (!room_name) {
-                    send(user->sock, "Usage: /new <chatroom name>\n", 29, 0);
-                } else {
-                    int no = create_chatroom(room_name);
-                    if (no < 0) {
-                        send(user->sock, "Cannot create more chatrooms.\n", 30, 0);
-                    } else {
-                        char msg[128];
-                        snprintf(msg, sizeof(msg), "Chatroom '%s' created (no: %d).\n", room_name, no);
-                        send(user->sock, msg, strlen(msg), 0);
-                    }
-                }
-            } else if (strcmp(cmd, "/chats") == 0) {
-                char listbuf[512];
-                resp_chatrooms(listbuf);
-                send(user->sock, listbuf, strlen(listbuf), 0);
-            } else if (strcmp(cmd, "/enter") == 0) {
-                char *num_str = strtok(NULL, " ");
-                int no = num_str ? atoi(num_str) : 0;
-                if (no <= 0 || no > chatroom_count) {
-                    send(user->sock, "Invalid chatroom number.\n", 25, 0);
-                } else {
-                    user->chat_room = no;
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "Entered chatroom '%s'.\n",
-                             chatrooms[no-1].name);
-                    send(user->sock, msg, strlen(msg), 0);
-                }
-            } else if (strcmp(cmd, "/exit") == 0) {
-                user->chat_room = ROOM0;
-                send(user->sock, "Exited chatroom.\n", 18, 0);
-            }
-        }
-        else if (user->chat_room != ROOM0) {
-            snprintf(buf2, 255, "[%s] %s\n", user->name, buf);
-            int cr_idx = -1;
-            for (int i = 0; i < chatroom_count; i++) {
-                if (chatrooms[i].no == user->chat_room) {
-                    cr_idx = i;
-                    break;
+                // 대상 찾기
+                userinfo_t *peer=NULL;
+                for (int i=0;i<client_count;i++) if(!strcmp(users[i]->name,id)) peer=users[i];
+                if (peer) {
+                    userinfo_t *init[2]={user,peer};
+                    char pname[128]; snprintf(pname,128,"%s-%s",user->name,peer->name);
+                    int no = create_chatroom(pname,1,init,2);
+                    user->room_no = no; peer->room_no = no;
+                    snprintf(out,sizeof(out),"Private chat created (#%d)\n",no);
+                    send(user->sock,out,strlen(out),0);
+                    send(peer->sock,out,strlen(out),0);
                 }
             }
-            if (cr_idx >= 0) {
-                for (int i = 0; i < client_num; i++) {
-                    if (users[i]->is_conn && users[i]->chat_room == user->chat_room) {
-                        send(users[i]->sock, buf2, strlen(buf2), 0);
-                    }
+            else if (!strcmp(cmd,"/chats")) {
+                char list[512]; resp_chatrooms(list);
+                send(user->sock,list,strlen(list),0);
+            }
+            else if (!strcmp(cmd,"/enter")) {
+                char *num_s=strtok(NULL," "); int no=num_s?atoi(num_s):0;
+                if (no<=0||no>chatroom_count) send(user->sock,"Invalid room#\n",14,0);
+                else { join_chatroom(user,no);
+                    snprintf(out,sizeof(out),"Entered room #%d\n",no);
+                    send(user->sock,out,strlen(out),0);
                 }
-            } else {
-                int pr_idx = user->chat_room - 1;
-                if (pr_idx >= 0 && pr_idx < room_num) {
-                    for (int i = 0; i < 2; i++) {
-                        userinfo_t *peer = rooms[pr_idx].member[i];
-                        if (peer && peer->is_conn) {
-                            send(peer->sock, buf2, strlen(buf2), 0);
-                        }
-                    }
+            }
+            else if (!strcmp(cmd,"/exit")) {
+                leave_chatroom(user);
+                send(user->sock,"Exited room\n",11,0);
+            }
+            else if (!strcmp(cmd,"/dm")) {
+                char *id=strtok(NULL," "); char *msg=strtok(NULL,"");
+                if(!id||!msg) { send(user->sock,"Usage: /dm <user> <msg>\n",25,0); continue; }
+                snprintf(out,sizeof(out),"[DM %s->%s] %s\n",user->name,id,msg);
+                int found=0;
+                for(int i=0;i<client_count;i++){
+                    if(users[i]->is_conn && !strcmp(users[i]->name,id)){
+                        send(users[i]->sock,out,strlen(out),0); found=1; break; }
                 }
+                if(!found) send(user->sock,"User not found\n",15,0);
             }
         }
         else {
-            /* lobby message: ROOM0 참여자만 */
-            snprintf(buf2, 255, "[%s] %s\n", user->name, buf);
-            for (int i = 0; i < client_num; i++) {
-                if (users[i]->is_conn && users[i]->chat_room == ROOM0) {
-                    send(users[i]->sock, buf2, strlen(buf2), 0);
-                }
-            }
+            // 일반 메시지: 현재 방 번호 기준 브로드캐스트
+            int no = user->room_no;
+            snprintf(out,sizeof(out),"[%s] %s\n",user->name,buf);
+            broadcast_message(no,out);
         }
     }
+    user->is_conn=0;
+    leave_chatroom(user);
+    close(user->sock);
+    return NULL;
 }
 
-int main() {
-    char buf[256];
-    struct sockaddr_in sin, cli;
-    int sd, ns, clientlen = sizeof(cli);
+int main(){
+    int sd,ns,clilen=sizeof(struct sockaddr_in);
+    struct sockaddr_in sin,cli;
+    sd=socket(AF_INET,SOCK_STREAM,0);
+    int opt=1; setsockopt(sd,SOL_SOCKET,SO_REUSEADDR,&opt,sizeof(opt));
+    memset(&sin,0,sizeof(sin)); sin.sin_family=AF_INET; sin.sin_port=htons(PORTNUM);
+    sin.sin_addr.s_addr=INADDR_ANY;
+    bind(sd,(struct sockaddr*)&sin,sizeof(sin)); listen(sd,5);
 
-    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(1);
-    }
-
-    int optval = 1;
-    setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-
-    memset((char *)&sin, '\0', sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(PORTNUM);
-    sin.sin_addr.s_addr = 0;
-    if (bind(sd, (struct sockaddr *)&sin, sizeof(sin))) {
-        perror("bind");
-        exit(1);
-    }
-
-    if (listen(sd, 5)) {
-        perror("listen");
-        exit(1);
-    }
-
-    int epfd = epoll_create(1);
-    struct epoll_event ev, clients[10];
-    int epoll_num = 0;
-
-    ev.events = EPOLLIN;
-    ev.data.fd = sd;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, sd, &ev);
-
-    ev.events = EPOLLIN;
-    ev.data.fd = 0;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, 0, &ev);
-
+    int epfd=epoll_create1(0);
+    struct epoll_event ev,events[10];
+    ev.events=EPOLLIN; ev.data.fd=sd; epoll_ctl(epfd,EPOLL_CTL_ADD,sd,&ev);
+    ev.events=EPOLLIN; ev.data.fd=0;  epoll_ctl(epfd,EPOLL_CTL_ADD,0,&ev);
     printf("> "); fflush(stdout);
-
-    while (1) {
-        if ((epoll_num = epoll_wait(epfd, clients, 10, -1)) > 0) {
-            for (int i = 0; i < epoll_num; i++) {
-                if (clients[i].data.fd == sd) {
-                    ns = accept(sd, (struct sockaddr *)&cli, &clientlen);
-                    userinfo_t *user = calloc(1, sizeof(userinfo_t));
-                    user->sock = ns;
-                    user->is_conn = 1;
-                    user->chat_room = ROOM0;
-                    users[client_num++] = user;
-                    pthread_create(&user->thread, NULL, client_process, user);
-                } else {
-                    char command[64];
-                    fgets(command, sizeof(command), stdin);
-                    strtok(command, " \n");
-                    if (strcmp(command, "users") == 0)    show_userinfo();
-                    else if (strcmp(command, "chats") == 0) show_chatrooms();
-                    printf("> "); fflush(stdout);
+    while(1){
+        int n=epoll_wait(epfd,events,10,-1);
+        for(int i=0;i<n;i++){
+            if(events[i].data.fd==sd){
+                ns=accept(sd,(struct sockaddr*)&cli,&clilen);
+                userinfo_t *u=calloc(1,sizeof(*u)); u->sock=ns;
+                users[client_count++]=u;
+                pthread_create(&u->thread,NULL,client_process,u);
+            } else if(events[i].data.fd==0){
+                char cmd[64]; fgets(cmd,sizeof(cmd),stdin);
+                strtok(cmd," \n");
+                if(!strcmp(cmd,"users")) show_userinfo();
+                else if(!strcmp(cmd,"chats")){
+                    char list[512]; resp_chatrooms(list); printf("%s",list);
                 }
+                printf("> "); fflush(stdout);
             }
         }
     }
     close(sd);
+    return 0;
 }
