@@ -128,7 +128,6 @@ void show_chatrooms(void)
     printf("================================================\n");
 }
 
-
 void *client_process(void *arg)
 {
     userinfo_t *user = (userinfo_t *)arg;
@@ -258,6 +257,7 @@ void *client_process(void *arg)
             for (int i = 0; i < client_num; i++) {
                 if (users[i]->is_conn) {
                     send(users[i]->sock, buf2, strlen(buf2), 0);
+                }
                 }
             }
         }
