@@ -221,43 +221,43 @@ void *client_process(void *arg)
                 // /exit
                 user->chat_room = ROOM0;
                 send(user->sock, "Exited chatroom.\n", 18, 0);
-            } else if (user->chat_room != ROOM0) {
-                snprintf(buf2, 255, "[%s] %s\n", user->name, buf);
-                // 1) 공용 채팅방인지 확인
-                int cr_idx = -1;
-                for (int i = 0; i < chatroom_count; i++) {
-                    if (chatrooms[i].no == user->chat_room) {
-                        cr_idx = i;
-                        break;
-                    }
+            } 
+        } else if (user->chat_room != ROOM0) {
+            snprintf(buf2, 255, "[%s] %s\n", user->name, buf);
+            // 1) 공용 채팅방인지 확인
+            int cr_idx = -1;
+            for (int i = 0; i < chatroom_count; i++) {
+                if (chatrooms[i].no == user->chat_room) {
+                    cr_idx = i;
+                    break;
                 }
-                if (cr_idx >= 0) {
-                    // 공용 채팅방: 같은 숫자의 chat_room에 들어있는 모든 유저에게
-                    for (int i = 0; i < client_num; i++) {
-                        if (users[i]->is_conn && users[i]->chat_room == user->chat_room) {
-                            send(users[i]->sock, buf2, strlen(buf2), 0);
-                        }
-                    }
-                } else {
-                    // 비밀 채팅방: rooms[] 배열 사용 (원래 방식)
-                    int pr_idx = user->chat_room - 1;
-                    if (pr_idx >= 0 && pr_idx < room_num) {
-                        for (int i = 0; i < 2; i++) {
-                            userinfo_t *peer = rooms[pr_idx].member[i];
-                            if (peer && peer->is_conn) {
-                                send(peer->sock, buf2, strlen(buf2), 0);
-                            }
-                        }
+            }
+            if (cr_idx >= 0) {
+                // 공용 채팅방: 같은 숫자의 chat_room에 들어있는 모든 유저에게
+                for (int i = 0; i < client_num; i++) {
+                    if (users[i]->is_conn && users[i]->chat_room == user->chat_room) {
+                        send(users[i]->sock, buf2, strlen(buf2), 0);
                     }
                 }
             } else {
+                // 비밀 채팅방: rooms[] 배열 사용 (원래 방식)
+                int pr_idx = user->chat_room - 1;
+                if (pr_idx >= 0 && pr_idx < room_num) {
+                    for (int i = 0; i < 2; i++) {
+                        userinfo_t *peer = rooms[pr_idx].member[i];
+                        if (peer && peer->is_conn) {
+                            send(peer->sock, buf2, strlen(buf2), 0);
+                        }
+                    }
+                }
+            }
+        } else {
             /* general message */
             snprintf(buf2, 255, "[%s] %s\n", user->name, buf);
 
             for (int i = 0; i < client_num; i++) {
                 if (users[i]->is_conn) {
                     send(users[i]->sock, buf2, strlen(buf2), 0);
-                }
                 }
             }
         }
