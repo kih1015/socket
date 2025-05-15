@@ -36,6 +36,18 @@ static chatroom_t  chatrooms[MAX_CHATROOMS];
 static int client_count   = 0;
 static int chatroom_count = 0;
 
+// 사용자 목록 응답 함수
+void resp_users(char *buf)
+{
+    buf[0] = '\0';
+    for (int i = 0; i < client_count; i++) {
+        if (users[i]->is_conn) {
+            strcat(buf, users[i]->name);
+            strcat(buf, ", ");
+        }
+    }
+}
+
 void show_userinfo(void)
 {
     printf("%2s\t%16s\t%12s\t%s\n", "SD", "NAME", "CONNECTION", "ROOM");
@@ -170,7 +182,6 @@ void *client_process(void *arg)
             else if (!strcmp(cmd,"/start")) {
                 char *id = strtok(NULL," ");
                 if (!id) continue;
-                // 대상 찾기
                 userinfo_t *peer=NULL;
                 for (int i=0;i<client_count;i++) if(!strcmp(users[i]->name,id)) peer=users[i];
                 if (peer) {
@@ -190,7 +201,8 @@ void *client_process(void *arg)
             else if (!strcmp(cmd,"/enter")) {
                 char *num_s=strtok(NULL," "); int no=num_s?atoi(num_s):0;
                 if (no<=0||no>chatroom_count) send(user->sock,"Invalid room#\n",14,0);
-                else { join_chatroom(user,no);
+                else {
+                    join_chatroom(user,no);
                     snprintf(out,sizeof(out),"Entered room #%d\n",no);
                     send(user->sock,out,strlen(out),0);
                 }
