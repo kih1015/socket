@@ -11,7 +11,7 @@
 
 #define PORTNUM 9000
 #define ROOM0   0
-#define MAX_CHATROOMS  20  // 공용과 개인 채팅방 모두 합친 최대
+#define MAX_CHATROOMS  20 
 #define MAX_USERS      10
 
 typedef struct {
@@ -22,12 +22,11 @@ typedef struct {
     int room_no;    // 참여중인 채팅방 번호
 } userinfo_t;
 
-// 통합 채팅방 구조체
 typedef struct {
     int   no;              // 방 번호 (1부터 시작)
     char  name[64];        // 방 이름 (개인방은 "user1-user2" 형태)
     int   is_private;      // 1: 개인채팅, 0: 공용채팅
-    userinfo_t *members[MAX_USERS]; // 방에 속한 사용자 포인터
+    userinfo_t *members[MAX_USERS];
     int   member_count;
 } chatroom_t;
 
@@ -136,6 +135,14 @@ void leave_chatroom(userinfo_t *user)
 
 void broadcast_message(int room_no, const char *msg)
 {
+    if (room_no == ROOM0) {
+        for (int i = 0; i < client_count; i++) {
+            if (users[i]->is_conn && users[i]->room_no == ROOM0) {
+                send(users[i]->sock, msg, strlen(msg), 0);
+            }
+        }
+        return;
+    }
     for (int i = 0; i < chatroom_count; i++) {
         if (chatrooms[i].no == room_no) {
             for (int j = 0; j < chatrooms[i].member_count; j++) {
