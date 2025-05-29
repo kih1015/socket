@@ -22,11 +22,11 @@ typedef struct {
     int room_no;    // 현재 참여중인 방 번호
 } userinfo_t;
 
-// 채팅방 정보 구조체 (멤버는 단방향으로 user.room_no 로 확인)
 typedef struct {
-    int   no;              // 방 번호 (1부터 시작)
-    char  name[64];        // 방 이름
-    int   is_private;      // 1: 개인, 0: 공용
+    int   no;              
+    char  name[64];        
+    int   is_private;      
+    int   owner_sock;      // 방장 소켓
 } chatroom_t;
 
 static userinfo_t *users[MAX_USERS];
@@ -77,14 +77,14 @@ void resp_chatrooms(char *buf)
 }
 
 // 방 생성 (초기 멤버는 user.room_no 로 관리)
-int create_chatroom(const char *name, int is_private)
+int create_chatroom(const char *name, int is_private, int owner_sock)
 {
     if (chatroom_count >= MAX_CHATROOMS) return -1;
     chatroom_t *r = &chatrooms[chatroom_count];
-    r->no = chatroom_count + 1;
-    strncpy(r->name, name, 63);
-    r->name[63] = '\0';
-    r->is_private = is_private;
+    r->no           = chatroom_count + 1;
+    strncpy(r->name, name, 63);  r->name[63] = '\0';
+    r->is_private   = is_private;
+    r->owner_sock   = owner_sock;    // 방장 등록
     chatroom_count++;
     return r->no;
 }
@@ -138,10 +138,13 @@ void *client_process(void *arg)
             }
             else if (!strcmp(cmd, "/new")) {
                 char *rname = strtok(NULL, "");
-                if (!rname) send(user->sock, "Usage: /new <name>\n", 21, 0);
-                else {
-                    int no = create_chatroom(rname, 0);
-                    snprintf(out, sizeof(out), "Chatroom '%s' created (#%d)\n", rname, no);
+                if (!rname) {
+                    send(user->sock, "Usage: /new <name>\n", 21, 0);
+                } else {
+                    // user->sock을 owner_sock으로 넘김
+                    int no = create_chatroom(rname, 0, user->sock);
+                    snprintf(out, sizeof(out),
+                            "Chatroom '%s' created (#%d)\n", rname, no);
                     send(user->sock, out, strlen(out), 0);
                 }
             }
@@ -154,11 +157,12 @@ void *client_process(void *arg)
                 }
                 if (peer) {
                     char pname[128];
-                    snprintf(pname, sizeof(pname), "%s-%s", user->name, peer->name);
-                    int no = create_chatroom(pname, 1);
-                    user->room_no = no;
-                    peer->room_no = no;
-                    snprintf(out, sizeof(out), "Private chat created (#%d)\n", no);
+                    snprintf(pname, sizeof(pname), "%s-%s",
+                            user->name, peer->name);
+                    int no = create_chatroom(pname, 1, user->sock);
+                    user->room_no = peer->room_no = no;
+                    snprintf(out, sizeof(out),
+                            "Private chat created (#%d)\n", no);
                     send(user->sock, out, strlen(out), 0);
                     send(peer->sock, out, strlen(out), 0);
                 }
@@ -195,7 +199,29 @@ void *client_process(void *arg)
                     }
                 }
                 if (!found) send(user->sock, "User not found\n", 15, 0);
-            }
+            } 
+            else if (!strcmp(cmd, "/close")) {
+                int rn = user->room_no;
+                if (rn == ROOM0) {
+                    send(user->sock, "Not in a room\n", 14, 0);
+                } else {
+                    chatroom_t *room = &chatrooms[rn - 1];
+                    if (room->owner_sock != user->sock) {
+                        send(user->sock,
+                            "Only the room owner can close this room\n",
+                            40, 0);
+                    } else {
+                        // 참여자 모두 방 나가기 처리
+                        for (int i = 0; i < client_count; i++) {
+                            if (users[i]->room_no == rn) {
+                                leave_chatroom(users[i]);
+                                send(users[i]->sock,
+                                    "Room has been closed by the owner\n",
+                                    34, 0);
+                            }
+                        }
+                    }
+                }
         } else {
             // 일반 메시지 브로드캐스트
             snprintf(out, sizeof(out), "[%s] %s\n", user->name, buf);
