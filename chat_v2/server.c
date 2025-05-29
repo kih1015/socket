@@ -222,6 +222,7 @@ void *client_process(void *arg)
                         }
                     }
                 }
+            }
         } else {
             // 일반 메시지 브로드캐스트
             snprintf(out, sizeof(out), "[%s] %s\n", user->name, buf);
